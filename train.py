@@ -13,7 +13,7 @@ from data.data_loader import CreateDataLoader
 from models.models import create_model
 import util.util as util
 from util.visualizer import Visualizer
-
+from util import html
 opt = TrainOptions().parse()
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 if opt.continue_train:
@@ -40,6 +40,23 @@ print('#training images = %d' % dataset_size)
 
 model = create_model(opt)
 visualizer = Visualizer(opt)
+### for evolution image:
+if opt.evolution:
+  evol_opt = TrainOptions().parse(save=False)
+  evol_opt.nThreads = 1   # test code only supports nThreads = 1
+  evol_opt.batchSize = 1  # test code only supports batchSize = 1
+  evol_opt.serial_batches = True  # no shuffle
+  evol_opt.no_flip = True  # no flip
+  evol_opt.phase = 'evol'
+  #evol_opt.isTrain = False
+  
+  evol_data_loader = CreateDataLoader(evol_opt)
+  evol_dataset = evol_data_loader.load_data()
+  evol_visualizer = Visualizer(evol_opt)
+  
+  evol_web_dir = os.path.join(evol_opt.checkpoints_dir, evol_opt.name, '%s_%s' % (evol_opt.phase, evol_opt.which_epoch))
+  evol_webpage = html.HTML(evol_web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (evol_opt.name, evol_opt.phase, evol_opt.which_epoch))
+
 if opt.fp16:    
     from apex import amp
     model, [optimizer_G, optimizer_D] = amp.initialize(model, [model.optimizer_G, model.optimizer_D], opt_level='O1')             
@@ -131,7 +148,18 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         model.module.save('latest')
         model.module.save(epoch)
         np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
-
+    
+    ### evol test image
+    if opt.evolution:
+      for evol_i, evol_data in enumerate(evol_dataset):
+        evol_generated = model.module.inference(evol_data['label'], evol_data['inst'], evol_data['image'])
+          
+        evol_visuals = OrderedDict([('input_label_%d'%epoch, util.tensor2label(evol_data['label'][0], evol_opt.label_nc)),
+                             ('synthesized_image_%d'%epoch, util.tensor2im(evol_generated.data[0]))])
+        evol_img_path = evol_data['path']
+        #print('process image... %s' % evol_img_path)
+        evol_visualizer.save_images(evol_webpage, evol_visuals, evol_img_path)
+    
     ### instead of only training the local enhancer, train the entire network after certain iterations
     if (opt.niter_fix_global != 0) and (epoch == opt.niter_fix_global):
         model.module.update_fixed_params()
