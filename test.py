@@ -8,7 +8,7 @@ import util.util as util
 from util.visualizer import Visualizer
 from util import html
 import torch
-
+from models.networks import ResnetBlock
 opt = TestOptions().parse(save=False)
 opt.nThreads = 1   # test code only supports nThreads = 1
 opt.batchSize = 1  # test code only supports batchSize = 1
@@ -51,6 +51,16 @@ for i, data in enumerate(dataset):
                           opt.export_onnx, verbose=True)
         exit(0)
     minibatch = 1 
+    
+    if opt.save_output_hook:
+        from save_output_hook import SaveOutput
+        save_output = SaveOutput()
+        hook_handles = []
+        for layer in model.modules():
+            if isinstance(layer, ResnetBlock):#torch.nn.modules.conv.Conv2d):
+                handle = layer.register_forward_hook(save_output)
+                hook_handles.append(handle)
+    
     if opt.engine:
         generated = run_trt_engine(opt.engine, minibatch, [data['label'], data['inst']])
     elif opt.onnx:
@@ -62,6 +72,13 @@ for i, data in enumerate(dataset):
                            ('synthesized_image', util.tensor2im(generated.data[0]))])
     img_path = data['path']
     print('process image... %s' % img_path)
+    
+    if opt.save_output_hook:
+        ## save_output.outputs[layer][idx_in_batch(=0)][channel][H][W]
+        for layer_idx in range(len(save_output.outputs)):
+          for channel_idx in range(len(save_output.outputs[layer_idx][0])):
+            visuals.update({'inter_image_L%s_C%s'%(layer_idx,channel_idx) : util.tensor2gray(save_output.outputs[layer_idx][0][channel_idx])})
+
     visualizer.save_images(webpage, visuals, img_path)
 
 webpage.save()

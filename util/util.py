@@ -5,6 +5,23 @@ from PIL import Image
 import numpy as np
 import os
 
+# Converts a 1-channel Tensor into a Numpy array
+# |imtype|: the desired type of the converted numpy array
+def tensor2gray(image_tensor, imtype=np.uint8, normalize=False):
+    if isinstance(image_tensor, list):
+        image_numpy = []
+        for i in range(len(image_tensor)):
+            image_numpy.append(tensor2gray(image_tensor[i], imtype, normalize))
+        return image_numpy
+    image_numpy = image_tensor.detach().cpu().float().numpy()
+    if normalize:
+        image_numpy = (image_numpy + 1) / 2.0 * 255.0
+    else:
+        image_numpy = image_numpy * 255.0      
+    image_numpy = np.clip(image_numpy, 0, 255)
+    return image_numpy.astype(imtype)
+
+
 # Converts a Tensor into a Numpy array
 # |imtype|: the desired type of the converted numpy array
 def tensor2im(image_tensor, imtype=np.uint8, normalize=True):
